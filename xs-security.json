@@ -1,0 +1,44 @@
+{
+  "xsappname": "project_apd",
+  "tenant-mode": "dedicated",
+  "description": "Security profile of called application",
+  "scopes": [
+    {
+      "name": "uaa.user",
+      "description": "UAA"
+    },
+    {
+      "name": "$XSAPPNAME.RiskViewer",
+      "description": "RiskViewer"
+    },
+    {
+      "name": "$XSAPPNAME.RiskManager",
+      "description": "RiskManager"
+    }
+  ],
+  "role-templates": [
+    {
+      "name": "Token_Exchange",
+      "description": "UAA",
+      "scope-references": [
+        "uaa.user"
+      ]
+    },
+    {
+      "name": "RiskViewer",
+      "description": "generated",
+      "scope-references": [
+        "$XSAPPNAME.RiskViewer"
+      ],
+      "attribute-references": []
+    },
+    {
+      "name": "RiskManager",
+      "description": "generated",
+      "scope-references": [
+        "$XSAPPNAME.RiskManager"
+      ],
+      "attribute-references": []
+    }
+  ]
+}
