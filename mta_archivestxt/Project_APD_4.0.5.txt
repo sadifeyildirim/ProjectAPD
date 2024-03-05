@@ -1,0 +1,179 @@
+_schema-version: "3.1"
+ID: Project_APD
+description: A simple CAP project.
+version: 4.0.5
+modules:
+- name: Project_APD-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: Project_APD-db
+  - name: Project_APD-uaa
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+- name: Project_APD-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: Project_APD-db
+  - name: Project_APD-uaa
+  parameters:
+    buildpack: nodejs_buildpack
+- name: Project_APD-destinations
+  type: com.sap.application.content
+  requires:
+  - name: Project_APD-uaa
+    parameters:
+      service-key:
+        name: Project_APD-uaa-key
+  - name: Project_APD-html5-repo-host
+    parameters:
+      service-key:
+        name: Project_APD-html5-repo-host-key
+  - name: srv-api
+  - name: Project_APD-destination
+    parameters:
+      content-target: true
+  parameters:
+    content:
+      instance:
+        destinations:
+        - Authentication: OAuth2UserTokenExchange
+          Name: Project_APD-app-srv
+          TokenServiceInstanceName: Project_APD-uaa
+          TokenServiceKeyName: Project_APD-uaa-key
+          URL: ~{srv-api/srv-url}
+          sap.cloud.service: Project_APD.service
+        - Name: Project_APD-html5-repo-host
+          ServiceInstanceName: Project_APD-html5-repo-host
+          ServiceKeyName: Project_APD-html5-repo-host-key
+          sap.cloud.service: Project_APD.service
+        - Authentication: OAuth2UserTokenExchange
+          Name: Project_APD-uaa
+          ServiceInstanceName: Project_APD-uaa
+          ServiceKeyName: Project_APD-uaa-key
+          sap.cloud.service: Project_APD.service
+        existing_destinations_policy: update
+  build-parameters:
+    no-source: true
+- name: Project_APD
+  type: approuter.nodejs
+  path: app/
+  requires:
+  - name: srv-api
+    group: destinations
+    properties:
+      forwardAuthToken: true
+      name: srv-api
+      url: ~{srv-url}
+  - name: Project_APD-uaa
+  - name: Project_APD-destination
+    group: destinations
+    properties:
+      forwardAuthToken: false
+      name: ui5
+      url: https://ui5.sap.com
+  parameters:
+    disk-quota: 1024M
+    keep-existing-routes: true
+    memory: 1024M
+- name: Project_APD-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: Project_APD-html5-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - nsbtpmodulefi.zip
+      name: nsbtpmodulefi
+      target-path: resources/
+    - artifacts:
+      - project1.zip
+      name: project1
+      target-path: resources/
+- name: nsbtpmodulefi
+  type: html5
+  path: app/modulefi
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+- name: project1
+  type: html5
+  path: app/project1
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: Project_APD-db
+  type: com.sap.xs.hdi-container
+  parameters: 
+    service: hana
+    service-plan: hdi-shared
+  properties:
+    hdi-service-name: ${service-name}
+- name: Project_APD-uaa
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      role-collections:
+      - description: Manage Risks
+        name: RiskManager3-${space}
+        role-template-references:
+        - $XSAPPNAME.RiskManager
+      - description: View Risks
+        name: RiskViewer3-${space}
+        role-template-references:
+        - $XSAPPNAME.RiskViewer
+      tenant-mode: dedicated
+      xsappname: Project_APD-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+- name: Project_APD-destination
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: true
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+      version: 1.0.1
+    service: destination
+    service-plan: lite
+- name: Project_APD-html5-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-plan: app-host
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npm install --production
+    - npx -p @sap/cds-dk cds build --production
+    - npx rimraf gen/db/src/gen/data

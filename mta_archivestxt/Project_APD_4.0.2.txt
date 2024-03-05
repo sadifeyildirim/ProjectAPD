@@ -1,0 +1,155 @@
+_schema-version: "3.1"
+ID: Project_APD
+description: A simple CAP project.
+version: 4.0.2
+modules:
+- name: Project_APD-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: Project_APD-auth
+  - name: Project_APD-db
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+  build-parameters:
+    builder: npm
+- name: Project_APD-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: Project_APD-db
+  parameters:
+    buildpack: nodejs_buildpack
+- name: Project_APD
+  type: approuter.nodejs
+  path: app/
+  requires:
+  - name: srv-api
+    group: destinations
+    properties:
+      forwardAuthToken: true
+      name: srv-api
+      url: ~{srv-url}
+  - name: Project_APD-auth
+  - name: Project_APD-destination-service
+    group: destinations
+    properties:
+      forwardAuthToken: false
+      name: ui5
+      url: https://ui5.sap.com
+  parameters:
+    disk-quota: 1024M
+    keep-existing-routes: true
+    memory: 1024M
+- name: Project_APD-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: Project_APD-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - nsbtpmodulefi.zip
+      name: nsbtpmodulefi
+      target-path: resources/
+- name: nsbtpmodulefi
+  type: html5
+  path: app/modulefi
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+- name: Project_APD-destinations
+  type: com.sap.application.content
+  requires:
+  - name: Project_APD-auth
+    parameters:
+      service-key:
+        name: Project_APD-auth-key
+  - name: Project_APD-repo-host
+    parameters:
+      service-key:
+        name: Project_APD-html5-repo-host-key
+  - name: srv-api
+  - name: Project_APD-destinations
+    parameters:
+      content-target: true
+  parameters:
+    content:
+      instance:
+        destinations:
+        - Authentication: OAuth2UserTokenExchange
+          Name: Project_APD-app-srv
+          TokenServiceInstanceName: Project_APD-auth
+          TokenServiceKeyName: Project_APD-auth-key
+          URL: ~{srv-api/srv-url}
+          sap.cloud.service: Project_APD.service
+        - Name: Project_APD-html5-repo-host
+          ServiceInstanceName: Project_APD-html5-repo-host
+          ServiceKeyName: Project_APD-html5-repo-host-key
+          sap.cloud.service: Project_APD.service
+        - Authentication: OAuth2UserTokenExchange
+          Name: Project_APD-auth
+          ServiceInstanceName: Project_APD-auth
+          ServiceKeyName: Project_APD-auth-key
+          sap.cloud.service: Project_APD.service
+        existing_destinations_policy: update
+  build-parameters:
+    no-source: true
+resources:
+- name: Project_APD-auth
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      tenant-mode: dedicated
+      xsappname: Project_APD-${org}-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+- name: Project_APD-db
+  type: com.sap.xs.hdi-container
+  parameters:
+    service: hana
+    service-plan: hdi-shared
+- name: Project_APD-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-name: Project_APD-html5-srv
+    service-plan: app-host
+- name: Project_APD-destination-service
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: false
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+      version: 1.0.0
+    service: destination
+    service-name: Project_APD-destination-service
+    service-plan: lite
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npx cds build --production
